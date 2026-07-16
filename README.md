@@ -1,7 +1,6 @@
 <p align="center">
 <img src="docs/cover.png" width="100%">
 </p>
-![OpenAI](https://img.shields.io/badge/OpenAI-GPT--Powered-10A37F?style=for-the-badge)
 
 ![NextJS](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)
 
