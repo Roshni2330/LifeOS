@@ -99,24 +99,66 @@ export default function OnboardingPage() {
     }));
   }
 
-  function nextStep() {
-    if (currentStep < steps.length - 1) {
-      setCurrentStep((step) => step + 1);
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-      return;
-    }
+  async function nextStep() {
+  if (currentStep < steps.length - 1) {
+    setCurrentStep((step) => step + 1);
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      "http://localhost:5000/api/simulation/generate",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+
+        body: JSON.stringify({
+          name: formData.name,
+          age: Number(formData.age),
+          currentRole: formData.currentRole,
+          goal: formData.mainGoal,
+          decision: formData.decision,
+
+          priorities: {
+            riskTolerance: formData.riskTolerance,
+            financialPriority: formData.financialPriority,
+            workLifePriority: formData.workLifePriority,
+            learningPriority: formData.learningPriority,
+          },
+
+          options: [
+            formData.optionOne,
+            formData.optionTwo,
+            formData.optionThree,
+          ],
+        }),
+      },
+    );
+
+    const data = await response.json();
+
+    console.log(data);
 
     localStorage.setItem(
-      "lifeos-onboarding",
-      JSON.stringify(formData),
+      "lifeos-simulation",
+      JSON.stringify(data),
     );
 
     router.push("/simulation");
-  }
+  } catch (error) {
+    console.error(error);
 
+    alert("Simulation generation failed.");
+  }
+}
   function previousStep() {
     if (currentStep > 0) {
       setCurrentStep((step) => step - 1);

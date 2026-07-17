@@ -1,12 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   ArrowLeft,
   BrainCircuit,
   Dumbbell,
   FolderKanban,
+  LoaderCircle,
   Network,
   Sparkles,
   TrendingDown,
@@ -23,7 +28,43 @@ type ScoreKey =
 
 type ScoreSet = Record<ScoreKey, number>;
 
-const baselineScores: ScoreSet = {
+type Future = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  score?: number;
+  summary: string;
+  tags?: string[];
+};
+
+type Simulation = {
+  futures?: Future[];
+  lifeScores?: {
+    career?: number;
+    finance?: number;
+    learning?: number;
+    health?: number;
+    stress?: number;
+  };
+};
+
+type StoredSimulation = {
+  success?: boolean;
+  simulation?: Simulation;
+};
+
+type ButterflyApiResult = {
+  career: number;
+  finance: number;
+  learning: number;
+  health: number;
+  stress: number;
+  summary: string;
+};
+
+const API_BASE_URL = "http://localhost:5000";
+
+const defaultBaselineScores: ScoreSet = {
   career: 82,
   finance: 74,
   learning: 76,
@@ -33,13 +74,47 @@ const baselineScores: ScoreSet = {
 };
 
 const scoreMeta = [
-  { key: "career" as const, label: "Career growth", positive: true },
-  { key: "finance" as const, label: "Financial stability", positive: true },
-  { key: "learning" as const, label: "Learning", positive: true },
-  { key: "wellbeing" as const, label: "Well-being", positive: true },
-  { key: "stress" as const, label: "Stress", positive: false },
-  { key: "regret" as const, label: "Regret risk", positive: false },
+  {
+    key: "career" as const,
+    label: "Career growth",
+    positive: true,
+  },
+  {
+    key: "finance" as const,
+    label: "Financial stability",
+    positive: true,
+  },
+  {
+    key: "learning" as const,
+    label: "Learning",
+    positive: true,
+  },
+  {
+    key: "wellbeing" as const,
+    label: "Well-being",
+    positive: true,
+  },
+  {
+    key: "stress" as const,
+    label: "Stress",
+    positive: false,
+  },
+  {
+    key: "regret" as const,
+    label: "Regret risk",
+    positive: false,
+  },
 ];
+
+function clampScore(value: unknown, fallback = 0) {
+  const numberValue = Number(value);
+
+  if (Number.isNaN(numberValue)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(numberValue)));
+}
 
 export default function ButterflyPage() {
   const [studyHours, setStudyHours] = useState(1);
@@ -47,43 +122,239 @@ export default function ButterflyPage() {
   const [projectsPerMonth, setProjectsPerMonth] = useState(1);
   const [networkingLevel, setNetworkingLevel] = useState(30);
 
-  const updatedScores = useMemo(() => {
-    const score: ScoreSet = { ...baselineScores };
+  const [selectedFuture, setSelectedFuture] =
+    useState<Future | null>(null);
 
-    score.learning += studyHours * 4;
-    score.career += studyHours * 2;
+  const [baselineScores, setBaselineScores] =
+    useState<ScoreSet>(defaultBaselineScores);
 
-    score.wellbeing += exerciseDays * 3;
-    score.stress -= exerciseDays * 2;
+  const [updatedScores, setUpdatedScores] =
+    useState<ScoreSet>(defaultBaselineScores);
 
-    score.learning += projectsPerMonth * 3;
-    score.career += projectsPerMonth * 4;
-    score.finance += projectsPerMonth * 2;
+  const [summary, setSummary] = useState(
+    "Move the sliders to see how small habit changes can reshape your future.",
+  );
 
-    score.career += Math.round(networkingLevel * 0.08);
-    score.finance += Math.round(networkingLevel * 0.05);
-    score.regret -= Math.round(networkingLevel * 0.04);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-    if (studyHours >= 4) {
-      score.stress += 6;
-      score.wellbeing -= 4;
+  useEffect(() => {
+    try {
+      const storedValue =
+        localStorage.getItem("lifeos-dashboard") ||
+        localStorage.getItem("lifeos-simulation");
+
+      if (!storedValue) {
+        setErrorMessage(
+          "No simulation was found. Please generate your futures first.",
+        );
+        return;
+      }
+
+      const parsed = JSON.parse(storedValue) as
+        | StoredSimulation
+        | Simulation;
+
+      const simulation =
+        "simulation" in parsed && parsed.simulation
+          ? parsed.simulation
+          : (parsed as Simulation);
+
+      const future =
+        simulation.futures?.find(
+          (item) => item.id === "growth",
+        ) ||
+        simulation.futures?.[0] ||
+        null;
+
+      if (!future) {
+        setErrorMessage(
+          "No future data was found. Please create a new simulation.",
+        );
+        return;
+      }
+
+      setSelectedFuture(future);
+
+      const lifeScores = simulation.lifeScores;
+
+      const generatedBaseline: ScoreSet = {
+        career: clampScore(
+          lifeScores?.career,
+          defaultBaselineScores.career,
+        ),
+        finance: clampScore(
+          lifeScores?.finance,
+          defaultBaselineScores.finance,
+        ),
+        learning: clampScore(
+          lifeScores?.learning,
+          defaultBaselineScores.learning,
+        ),
+        wellbeing: clampScore(
+          lifeScores?.health,
+          defaultBaselineScores.wellbeing,
+        ),
+        stress: clampScore(
+          lifeScores?.stress,
+          defaultBaselineScores.stress,
+        ),
+        regret: Math.max(
+          0,
+          Math.min(
+            100,
+            100 -
+              clampScore(
+                future.score,
+                100 - defaultBaselineScores.regret,
+              ),
+          ),
+        ),
+      };
+
+      setBaselineScores(generatedBaseline);
+      setUpdatedScores(generatedBaseline);
+    } catch (error) {
+      console.error("Failed to load LifeOS simulation:", error);
+      setErrorMessage(
+        "The saved simulation data could not be read.",
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedFuture) {
+      return;
     }
 
-    if (projectsPerMonth >= 3) {
-      score.stress += 4;
-    }
+    const controller = new AbortController();
 
-    Object.keys(score).forEach((key) => {
-      const typedKey = key as ScoreKey;
-      score[typedKey] = Math.max(0, Math.min(100, score[typedKey]));
-    });
+    const timer = window.setTimeout(async () => {
+      setIsLoading(true);
+      setErrorMessage("");
 
-    return score;
-  }, [studyHours, exerciseDays, projectsPerMonth, networkingLevel]);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/butterfly/recalculate`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+              future: selectedFuture,
+              studyHours,
+              sleepHours: 7,
+              exercise: exerciseDays,
+              networking: Math.round(
+                networkingLevel / 20,
+              ),
+              projects: projectsPerMonth,
+            }),
+          },
+        );
+
+        const data = (await response.json()) as {
+          success?: boolean;
+          result?: ButterflyApiResult;
+          message?: string;
+        };
+
+        if (!response.ok || !data.success || !data.result) {
+          throw new Error(
+            data.message ||
+              "The Butterfly Effect could not be calculated.",
+          );
+        }
+
+        const result = data.result;
+
+        setUpdatedScores({
+          career: clampScore(
+            result.career,
+            baselineScores.career,
+          ),
+          finance: clampScore(
+            result.finance,
+            baselineScores.finance,
+          ),
+          learning: clampScore(
+            result.learning,
+            baselineScores.learning,
+          ),
+          wellbeing: clampScore(
+            result.health,
+            baselineScores.wellbeing,
+          ),
+          stress: clampScore(
+            result.stress,
+            baselineScores.stress,
+          ),
+          regret: Math.max(
+            0,
+            Math.min(
+              100,
+              100 -
+                Math.round(
+                  (clampScore(result.career) +
+                    clampScore(result.finance) +
+                    clampScore(result.learning)) /
+                    3,
+                ),
+            ),
+          ),
+        });
+
+        setSummary(
+          result.summary ||
+            "Your habit changes created a new future signal.",
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.name === "AbortError"
+        ) {
+          return;
+        }
+
+        console.error(
+          "Butterfly Effect recalculation failed:",
+          error,
+        );
+
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "Unable to recalculate this future.",
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    }, 650);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [
+    selectedFuture,
+    studyHours,
+    exerciseDays,
+    projectsPerMonth,
+    networkingLevel,
+    baselineScores.career,
+    baselineScores.finance,
+    baselineScores.learning,
+    baselineScores.stress,
+    baselineScores.wellbeing,
+  ]);
 
   const strongestChange = useMemo(() => {
-    let bestLabel = "";
-    let bestDifference = -Infinity;
+    let bestLabel = "No major change";
+    let bestDifference = 0;
 
     scoreMeta.forEach((item) => {
       const before = baselineScores[item.key];
@@ -103,11 +374,12 @@ export default function ButterflyPage() {
       label: bestLabel,
       difference: bestDifference,
     };
-  }, [updatedScores]);
+  }, [baselineScores, updatedScores]);
 
   return (
     <main className="relative min-h-screen overflow-hidden px-4 py-8 sm:px-6">
       <div className="pointer-events-none absolute left-[8%] top-[12%] h-80 w-80 rounded-full bg-primary/15 blur-[130px]" />
+
       <div className="pointer-events-none absolute bottom-[10%] right-[8%] h-80 w-80 rounded-full bg-secondary/10 blur-[130px]" />
 
       <div className="page-container relative z-10">
@@ -133,7 +405,7 @@ export default function ButterflyPage() {
 
         <section className="py-14 text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.28em] text-secondary">
-            Butterfly Effect
+            AI Butterfly Effect
           </p>
 
           <h1 className="text-gradient mx-auto mt-4 max-w-4xl text-5xl font-semibold tracking-tight sm:text-6xl">
@@ -141,10 +413,34 @@ export default function ButterflyPage() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-muted">
-            Adjust small daily choices and see how they influence your future
-            career, learning, stress, well-being and regret.
+            Adjust small daily choices and let LifeOS AI recalculate
+            your future career, learning, stress, well-being and regret.
           </p>
         </section>
+
+        {selectedFuture && (
+          <section className="glass-panel mb-6 rounded-3xl p-5">
+            <p className="text-sm text-secondary">
+              Future being recalculated
+            </p>
+
+            <div className="mt-2 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div>
+                <h2 className="text-xl font-semibold text-white">
+                  {selectedFuture.title}
+                </h2>
+
+                <p className="mt-1 text-sm text-muted">
+                  {selectedFuture.summary}
+                </p>
+              </div>
+
+              <span className="w-fit rounded-xl bg-success/10 px-3 py-1.5 text-sm font-semibold text-success">
+                Original score {selectedFuture.score ?? 0}%
+              </span>
+            </div>
+          </section>
+        )}
 
         <section className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
           <article className="glass-panel rounded-[32px] p-6 sm:p-7">
@@ -154,7 +450,10 @@ export default function ButterflyPage() {
               </div>
 
               <div>
-                <p className="text-sm text-secondary">Change your inputs</p>
+                <p className="text-sm text-secondary">
+                  Change your inputs
+                </p>
+
                 <h2 className="text-2xl font-semibold text-white">
                   Small choices today
                 </h2>
@@ -167,10 +466,10 @@ export default function ButterflyPage() {
                 label="Focused study each day"
                 value={studyHours}
                 min={0}
-                max={5}
+                max={6}
                 suffix=" hrs"
                 lowLabel="No focused study"
-                highLabel="5 hours daily"
+                highLabel="6 hours daily"
                 onChange={setStudyHours}
               />
 
@@ -210,12 +509,21 @@ export default function ButterflyPage() {
                 onChange={setNetworkingLevel}
               />
             </div>
+
+            {errorMessage && (
+              <div className="mt-6 rounded-2xl border border-danger/20 bg-danger/[0.06] p-4 text-sm leading-6 text-danger">
+                {errorMessage}
+              </div>
+            )}
           </article>
 
           <article className="glass-panel rounded-[32px] p-6 sm:p-7">
             <div className="flex items-center justify-between gap-5">
               <div>
-                <p className="text-sm text-secondary">Future recalculation</p>
+                <p className="text-sm text-secondary">
+                  AI future recalculation
+                </p>
+
                 <h2 className="mt-1 text-2xl font-semibold text-white">
                   Before vs after
                 </h2>
@@ -225,11 +533,24 @@ export default function ButterflyPage() {
                 <p className="text-xs uppercase tracking-[0.16em] text-success">
                   Strongest improvement
                 </p>
+
                 <p className="mt-1 font-semibold text-white">
-                  {strongestChange.label} +{strongestChange.difference}
+                  {isLoading
+                    ? "Recalculating..."
+                    : `${strongestChange.label} +${strongestChange.difference}`}
                 </p>
               </div>
             </div>
+
+            {isLoading && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-secondary/20 bg-secondary/[0.06] p-4 text-sm text-slate-300">
+                <LoaderCircle
+                  size={18}
+                  className="animate-spin text-secondary"
+                />
+                LifeOS AI is recalculating this future...
+              </div>
+            )}
 
             <div className="mt-8 space-y-6">
               {scoreMeta.map((item) => (
@@ -256,31 +577,29 @@ export default function ButterflyPage() {
             </h2>
 
             <p className="mt-5 text-lg leading-8 text-slate-300">
-              Increasing focused study and project output improves your
-              long-term learning and career strength. Exercise helps reduce
-              stress and improves well-being, while stronger networking creates
-              more opportunities and lowers future regret.
+              {summary}
             </p>
 
             <p className="mt-4 text-sm leading-7 text-muted">
-              The simulator also adds trade-offs. Very high study or project
-              intensity can increase stress, showing that more effort is not
-              always automatically better.
+              This is a simulated decision-support scenario. It shows
+              possible trade-offs rather than guaranteeing an outcome.
             </p>
           </article>
 
           <article className="glass-panel rounded-3xl p-7">
-            <p className="text-sm text-secondary">Updated future signal</p>
+            <p className="text-sm text-secondary">
+              Updated future signal
+            </p>
 
             <h2 className="mt-2 text-3xl font-semibold text-white">
-              Your choices are creating a stronger future
+              Small choices can create a different trajectory
             </h2>
 
             <div className="mt-7 rounded-2xl border border-secondary/15 bg-secondary/[0.05] p-5">
               <p className="text-sm leading-7 text-muted">
-                With your current habit settings, your learning and career
-                potential increase while regret risk drops. The most important
-                next step is to make these habits sustainable.
+                Keep the settings realistic and sustainable. The most
+                useful future is not always the one with maximum effort,
+                but the one you can maintain consistently.
               </p>
             </div>
 
@@ -345,7 +664,9 @@ function HabitSlider({
         min={min}
         max={max}
         value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={(event) =>
+          onChange(Number(event.target.value))
+        }
         className="mt-5 w-full accent-cyan-400"
       />
 
@@ -371,7 +692,10 @@ function ScoreComparison({
   positive,
 }: ScoreComparisonProps) {
   const rawDifference = after - before;
-  const effectiveImprovement = positive ? rawDifference : -rawDifference;
+  const effectiveImprovement = positive
+    ? rawDifference
+    : -rawDifference;
+
   const improved = effectiveImprovement > 0;
   const unchanged = effectiveImprovement === 0;
 
@@ -379,7 +703,9 @@ function ScoreComparison({
     <div>
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="font-medium text-slate-300">{label}</p>
+          <p className="font-medium text-slate-300">
+            {label}
+          </p>
 
           {!positive && (
             <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted">
@@ -389,7 +715,9 @@ function ScoreComparison({
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="text-sm text-muted">{before}</span>
+          <span className="text-sm text-muted">
+            {before}
+          </span>
 
           <span className="text-muted">→</span>
 
@@ -407,9 +735,15 @@ function ScoreComparison({
 
           {!unchanged &&
             (improved ? (
-              <TrendingUp size={18} className="text-success" />
+              <TrendingUp
+                size={18}
+                className="text-success"
+              />
             ) : (
-              <TrendingDown size={18} className="text-danger" />
+              <TrendingDown
+                size={18}
+                className="text-danger"
+              />
             ))}
         </div>
       </div>

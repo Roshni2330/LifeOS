@@ -1,152 +1,268 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   BrainCircuit,
   CheckCircle2,
   GitCompareArrows,
+  LoaderCircle,
   Sparkles,
   Trophy,
 } from "lucide-react";
 
-type FutureId = "stable" | "growth" | "studies";
-
-type FutureOption = {
-  id: FutureId;
-  name: string;
+type Future = {
+  id: string;
+  title: string;
   subtitle: string;
+  score: number;
   summary: string;
+  tags: string[];
+};
+
+type DecisionDNA = {
+  riskTolerance: number;
+  learningDrive: number;
+  financialPriority: number;
+  workLifePriority: number;
+};
+
+type LifeScores = {
+  career: number;
+  finance: number;
+  learning: number;
+  health: number;
+  stress: number;
+};
+
+type Simulation = {
+  decisionDNA: DecisionDNA;
+  lifeScores: LifeScores;
+  recommendation?: string;
+  timeline?: string[];
+  futures: Future[];
+};
+
+type StoredSimulation = {
+  success?: boolean;
+  simulation?: Simulation;
+};
+
+type ComparisonScores = {
+  career: number;
+  finance: number;
+  learning: number;
+  wellbeing: number;
+  relationships: number;
+  stress: number;
+  regret: number;
+};
+
+type Comparison = {
+  winnerId: string;
+  confidence: number;
+  explanation: string;
+  tradeoff: string;
+  categoryWinners: Record<string, string>;
   scores: {
-    career: number;
-    finance: number;
-    learning: number;
-    wellbeing: number;
-    relationships: number;
-    stress: number;
-    regret: number;
+    left: ComparisonScores;
+    right: ComparisonScores;
   };
 };
 
-const futureOptions: FutureOption[] = [
-  {
-    id: "stable",
-    name: "Stable Career Path",
-    subtitle: "Job-first future",
-    summary:
-      "Immediate income, structured growth and lower short-term uncertainty.",
-    scores: {
-      career: 82,
-      finance: 91,
-      learning: 72,
-      wellbeing: 80,
-      relationships: 84,
-      stress: 48,
-      regret: 31,
-    },
-  },
-  {
-    id: "growth",
-    name: "High-Growth Path",
-    subtitle: "Focused preparation",
-    summary:
-      "Maximum career acceleration and learning with greater pressure and risk.",
-    scores: {
-      career: 94,
-      finance: 83,
-      learning: 96,
-      wellbeing: 64,
-      relationships: 69,
-      stress: 79,
-      regret: 27,
-    },
-  },
-  {
-    id: "studies",
-    name: "Higher Studies Path",
-    subtitle: "Deep expertise",
-    summary:
-      "Delayed income, stronger specialization and better long-term research access.",
-    scores: {
-      career: 87,
-      finance: 68,
-      learning: 98,
-      wellbeing: 86,
-      relationships: 82,
-      stress: 55,
-      regret: 22,
-    },
-  },
-];
+type UserProfile = {
+  name?: string;
+  age?: string | number;
+  currentRole?: string;
+  mainGoal?: string;
+  decision?: string;
+};
+
+const API_BASE_URL = "http://localhost:5000";
 
 const scoreLabels = [
-  { key: "career", label: "Career growth", positive: true },
-  { key: "finance", label: "Financial stability", positive: true },
-  { key: "learning", label: "Learning", positive: true },
-  { key: "wellbeing", label: "Well-being", positive: true },
-  { key: "relationships", label: "Relationships", positive: true },
-  { key: "stress", label: "Stress", positive: false },
-  { key: "regret", label: "Regret risk", positive: false },
-] as const;
+  { key: "career" as const, label: "Career growth", positive: true },
+  { key: "finance" as const, label: "Financial stability", positive: true },
+  { key: "learning" as const, label: "Learning", positive: true },
+  { key: "wellbeing" as const, label: "Well-being", positive: true },
+  { key: "relationships" as const, label: "Relationships", positive: true },
+  { key: "stress" as const, label: "Stress", positive: false },
+  { key: "regret" as const, label: "Regret risk", positive: false },
+];
 
 export default function ComparePage() {
-  const [leftId, setLeftId] = useState<FutureId>("stable");
-  const [rightId, setRightId] = useState<FutureId>("growth");
+  const [simulation, setSimulation] = useState<Simulation | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile>({});
+  const [leftId, setLeftId] = useState("");
+  const [rightId, setRightId] = useState("");
+  const [comparison, setComparison] = useState<Comparison | null>(null);
+  const [isLoadingPage, setIsLoadingPage] = useState(true);
+  const [isComparing, setIsComparing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const leftFuture =
-    futureOptions.find((future) => future.id === leftId) ?? futureOptions[0];
+  useEffect(() => {
+    try {
+      const storedSimulation =
+        localStorage.getItem("lifeos-dashboard") ||
+        localStorage.getItem("lifeos-simulation");
 
-  const rightFuture =
-    futureOptions.find((future) => future.id === rightId) ?? futureOptions[1];
-
-  const comparison = useMemo(() => {
-    let leftPoints = 0;
-    let rightPoints = 0;
-
-    scoreLabels.forEach((item) => {
-      const leftValue = leftFuture.scores[item.key];
-      const rightValue = rightFuture.scores[item.key];
-
-      if (leftValue === rightValue) return;
-
-      if (item.positive) {
-        if (leftValue > rightValue) leftPoints += 1;
-        else rightPoints += 1;
-      } else {
-        if (leftValue < rightValue) leftPoints += 1;
-        else rightPoints += 1;
+      if (!storedSimulation) {
+        setErrorMessage("No simulation data was found.");
+        return;
       }
-    });
 
-    const winner =
-      leftPoints === rightPoints
-        ? null
-        : leftPoints > rightPoints
-          ? leftFuture
-          : rightFuture;
+      const parsed = JSON.parse(storedSimulation) as
+        | StoredSimulation
+        | Simulation;
 
-    const confidence =
-      leftPoints === rightPoints
-        ? 50
-        : Math.round(
-            60 +
-              (Math.abs(leftPoints - rightPoints) / scoreLabels.length) * 35,
-          );
+      const simulationData =
+        "simulation" in parsed && parsed.simulation
+          ? parsed.simulation
+          : (parsed as Simulation);
 
-    return {
-      leftPoints,
-      rightPoints,
-      winner,
-      confidence,
-    };
-  }, [leftFuture, rightFuture]);
+      if (!Array.isArray(simulationData.futures) || simulationData.futures.length < 2) {
+        setErrorMessage("At least two futures are required for comparison.");
+        return;
+      }
 
-  const winnerReason = getWinnerReason(
-    comparison.winner,
-    leftFuture,
-    rightFuture,
+      const storedProfile = localStorage.getItem("lifeos-onboarding");
+
+      if (storedProfile) {
+        setUserProfile(JSON.parse(storedProfile) as UserProfile);
+      }
+
+      setSimulation(simulationData);
+      setLeftId(simulationData.futures[0].id);
+      setRightId(simulationData.futures[1].id);
+    } catch (error) {
+      console.error("Failed to load comparison data:", error);
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to load the comparison page.",
+      );
+    } finally {
+      setIsLoadingPage(false);
+    }
+  }, []);
+
+  const leftFuture = useMemo(
+    () => simulation?.futures.find((future) => future.id === leftId) ?? null,
+    [simulation, leftId],
   );
+
+  const rightFuture = useMemo(
+    () => simulation?.futures.find((future) => future.id === rightId) ?? null,
+    [simulation, rightId],
+  );
+
+  useEffect(() => {
+    if (!simulation || !leftFuture || !rightFuture || leftFuture.id === rightFuture.id) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const timer = window.setTimeout(async () => {
+      setIsComparing(true);
+      setErrorMessage("");
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/compare`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            leftFuture,
+            rightFuture,
+            decisionDNA: simulation.decisionDNA,
+            lifeScores: simulation.lifeScores,
+            userProfile: {
+              name: userProfile.name,
+              age: userProfile.age,
+              currentRole: userProfile.currentRole,
+              goal: userProfile.mainGoal,
+              decision: userProfile.decision,
+            },
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success || !data.comparison) {
+          throw new Error(data.message || "AI comparison failed.");
+        }
+
+        setComparison(data.comparison as Comparison);
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+
+        console.error("Compare request failed:", error);
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "Unable to compare these futures.",
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsComparing(false);
+        }
+      }
+    }, 450);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [simulation, leftFuture, rightFuture, userProfile]);
+
+  if (isLoadingPage) {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-4">
+        <section className="glass-panel max-w-xl rounded-[32px] p-10 text-center">
+          <LoaderCircle size={42} className="mx-auto animate-spin text-secondary" />
+          <h1 className="text-gradient mt-6 text-4xl font-semibold">
+            Loading Decision Battle
+          </h1>
+          <p className="mt-4 text-muted">
+            Preparing your AI-generated future paths.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!simulation || !leftFuture || !rightFuture) {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-4">
+        <section className="glass-panel max-w-xl rounded-[32px] p-10 text-center">
+          <BrainCircuit size={42} className="mx-auto text-secondary" />
+          <h1 className="text-gradient mt-6 text-4xl font-semibold">
+            Comparison unavailable
+          </h1>
+          <p className="mt-4 text-muted">
+            {errorMessage || "Generate your futures first."}
+          </p>
+          <Link
+            href="/onboarding"
+            className="mt-7 inline-flex rounded-2xl bg-gradient-to-r from-primary to-secondary px-6 py-3 text-sm font-semibold text-white"
+          >
+            Start a new simulation
+          </Link>
+        </section>
+      </main>
+    );
+  }
+
+  const winner =
+    comparison
+      ? simulation.futures.find((future) => future.id === comparison.winnerId)
+      : null;
 
   return (
     <main className="relative min-h-screen overflow-hidden px-4 py-8 sm:px-6">
@@ -176,7 +292,7 @@ export default function ComparePage() {
 
         <section className="py-14 text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.28em] text-secondary">
-            Decision Battle
+            AI Decision Battle
           </p>
 
           <h1 className="text-gradient mx-auto mt-4 max-w-4xl text-5xl font-semibold tracking-tight sm:text-6xl">
@@ -184,8 +300,8 @@ export default function ComparePage() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-muted">
-            See which future better matches your priorities across growth,
-            money, learning, well-being and regret.
+            LifeOS AI evaluates both paths against your goals, priorities and
+            Decision DNA.
           </p>
         </section>
 
@@ -195,12 +311,17 @@ export default function ComparePage() {
             selectedId={leftId}
             onChange={setLeftId}
             future={leftFuture}
+            futures={simulation.futures}
             excludedId={rightId}
           />
 
           <div className="flex items-center justify-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-secondary/20 bg-secondary/[0.08] text-secondary">
-              <GitCompareArrows size={25} />
+              {isComparing ? (
+                <LoaderCircle size={25} className="animate-spin" />
+              ) : (
+                <GitCompareArrows size={25} />
+              )}
             </div>
           </div>
 
@@ -209,9 +330,16 @@ export default function ComparePage() {
             selectedId={rightId}
             onChange={setRightId}
             future={rightFuture}
+            futures={simulation.futures}
             excludedId={leftId}
           />
         </section>
+
+        {errorMessage && (
+          <div className="mt-6 rounded-2xl border border-danger/20 bg-danger/[0.06] p-4 text-sm text-danger">
+            {errorMessage}
+          </div>
+        )}
 
         <section className="glass-panel mt-8 overflow-hidden rounded-[32px]">
           <div className="grid grid-cols-[1fr_0.75fr_1fr] border-b border-white/10 px-5 py-5 text-center sm:px-8">
@@ -220,18 +348,20 @@ export default function ComparePage() {
                 Future A
               </p>
               <h2 className="mt-2 font-semibold text-white">
-                {leftFuture.name}
+                {leftFuture.title}
               </h2>
             </div>
 
-            <div className="self-center text-sm text-muted">Comparison</div>
+            <div className="self-center text-sm text-muted">
+              {isComparing ? "AI is comparing..." : "Comparison"}
+            </div>
 
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-secondary">
                 Future B
               </p>
               <h2 className="mt-2 font-semibold text-white">
-                {rightFuture.name}
+                {rightFuture.title}
               </h2>
             </div>
           </div>
@@ -241,8 +371,8 @@ export default function ComparePage() {
               <BattleRow
                 key={item.key}
                 label={item.label}
-                leftValue={leftFuture.scores[item.key]}
-                rightValue={rightFuture.scores[item.key]}
+                leftValue={comparison?.scores.left[item.key] ?? 0}
+                rightValue={comparison?.scores.right[item.key] ?? 0}
                 positive={item.positive}
               />
             ))}
@@ -259,32 +389,33 @@ export default function ComparePage() {
               <div>
                 <p className="text-sm text-secondary">Recommended future</p>
                 <h2 className="text-2xl font-semibold text-white">
-                  {comparison.winner?.name ?? "Balanced result"}
+                  {winner?.title || "Waiting for AI"}
                 </h2>
               </div>
             </div>
 
             <div className="mt-7 flex items-end justify-between">
               <div>
-                <p className="text-sm text-muted">Recommendation confidence</p>
-
+                <p className="text-sm text-muted">
+                  Recommendation confidence
+                </p>
                 <p className="mt-2 text-5xl font-semibold text-white">
-                  {comparison.confidence}%
+                  {comparison?.confidence ?? 0}%
                 </p>
               </div>
 
               <div className="rounded-2xl bg-success/10 px-4 py-3 text-center text-success">
                 <CheckCircle2 size={24} className="mx-auto" />
                 <p className="mt-1 text-xs font-semibold">
-                  {comparison.leftPoints}–{comparison.rightPoints}
+                  AI evaluated
                 </p>
               </div>
             </div>
 
             <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/10">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-primary to-secondary"
-                style={{ width: `${comparison.confidence}%` }}
+                className="h-full rounded-full bg-gradient-to-r from-primary to-secondary transition-all duration-700"
+                style={{ width: `${comparison?.confidence ?? 0}%` }}
               />
             </div>
           </article>
@@ -304,16 +435,23 @@ export default function ComparePage() {
             </div>
 
             <p className="mt-6 text-lg leading-8 text-slate-300">
-              {winnerReason}
+              {comparison?.explanation ||
+                "LifeOS AI is evaluating the selected futures."}
             </p>
+
+            <div className="mt-6 rounded-2xl border border-secondary/15 bg-secondary/[0.05] p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">
+                Important trade-off
+              </p>
+              <p className="mt-3 text-sm leading-7 text-muted">
+                {comparison?.tradeoff ||
+                  "Every path includes meaningful trade-offs."}
+              </p>
+            </div>
 
             <div className="mt-7 flex flex-wrap gap-3">
               <Link
-                href={
-                  comparison.winner
-                    ? `/future/${comparison.winner.id}`
-                    : "/dashboard"
-                }
+                href={winner ? `/future/${winner.id}` : "/dashboard"}
                 className="rounded-2xl bg-gradient-to-r from-primary to-secondary px-5 py-3 text-sm font-semibold text-white"
               >
                 Explore recommended future
@@ -335,10 +473,11 @@ export default function ComparePage() {
 
 type FutureSelectorProps = {
   label: string;
-  selectedId: FutureId;
-  onChange: (value: FutureId) => void;
-  future: FutureOption;
-  excludedId: FutureId;
+  selectedId: string;
+  onChange: (value: string) => void;
+  future: Future;
+  futures: Future[];
+  excludedId: string;
 };
 
 function FutureSelector({
@@ -346,6 +485,7 @@ function FutureSelector({
   selectedId,
   onChange,
   future,
+  futures,
   excludedId,
 }: FutureSelectorProps) {
   return (
@@ -356,16 +496,16 @@ function FutureSelector({
 
       <select
         value={selectedId}
-        onChange={(event) => onChange(event.target.value as FutureId)}
+        onChange={(event) => onChange(event.target.value)}
         className="mt-4 h-12 w-full rounded-2xl border border-white/10 bg-surface-soft px-4 text-sm text-white outline-none focus:border-secondary/40"
       >
-        {futureOptions.map((option) => (
+        {futures.map((option) => (
           <option
             key={option.id}
             value={option.id}
             disabled={option.id === excludedId}
           >
-            {option.name}
+            {option.title}
           </option>
         ))}
       </select>
@@ -373,10 +513,23 @@ function FutureSelector({
       <p className="mt-6 text-sm text-secondary">{future.subtitle}</p>
 
       <h2 className="mt-2 text-2xl font-semibold text-white">
-        {future.name}
+        {future.title}
       </h2>
 
-      <p className="mt-4 text-sm leading-7 text-muted">{future.summary}</p>
+      <p className="mt-4 text-sm leading-7 text-muted">
+        {future.summary}
+      </p>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {(future.tags || []).map((tag) => (
+          <span
+            key={tag}
+            className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300"
+          >
+            {tag}
+          </span>
+        ))}
+      </div>
     </article>
   );
 }
@@ -448,7 +601,7 @@ function ScoreSide({ value, winner, align }: ScoreSideProps) {
 
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
         <div
-          className={`h-full rounded-full bg-gradient-to-r from-primary to-secondary ${
+          className={`h-full rounded-full bg-gradient-to-r from-primary to-secondary transition-all duration-700 ${
             align === "right" ? "ml-auto" : ""
           }`}
           style={{ width: `${value}%` }}
@@ -456,24 +609,4 @@ function ScoreSide({ value, winner, align }: ScoreSideProps) {
       </div>
     </div>
   );
-}
-
-function getWinnerReason(
-  winner: FutureOption | null,
-  leftFuture: FutureOption,
-  rightFuture: FutureOption,
-) {
-  if (!winner) {
-    return `${leftFuture.name} and ${rightFuture.name} are closely balanced. The better choice depends on whether you currently value immediate stability or long-term exploration more strongly.`;
-  }
-
-  if (winner.id === "stable") {
-    return `${winner.name} performs better when immediate income, lower stress and relationship stability matter most. It offers fewer short-term disruptions while still providing steady professional growth.`;
-  }
-
-  if (winner.id === "growth") {
-    return `${winner.name} is the stronger match for a profile that prioritizes ambitious career growth and maximum learning. The advantage comes with higher stress, so this path works best when supported by clear boundaries and resilience.`;
-  }
-
-  return `${winner.name} fits a profile that values deep learning, well-being and lower long-term regret. Although financial progress begins more slowly, the path offers stronger specialization and meaningful long-term work.`;
 }

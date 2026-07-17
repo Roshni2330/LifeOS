@@ -14,10 +14,21 @@ const simulationSteps = [
 
 export default function SimulationPage() {
   const router = useRouter();
+
   const [activeStep, setActiveStep] = useState(0);
   const [progress, setProgress] = useState(12);
 
   useEffect(() => {
+    const simulation = localStorage.getItem("lifeos-simulation");
+
+    if (!simulation) {
+      router.push("/onboarding");
+      return;
+    }
+
+    // Save AI response for dashboard
+    localStorage.setItem("lifeos-dashboard", simulation);
+
     const stepInterval = window.setInterval(() => {
       setActiveStep((currentStep) => {
         if (currentStep >= simulationSteps.length - 1) {
@@ -27,7 +38,7 @@ export default function SimulationPage() {
 
         return currentStep + 1;
       });
-    }, 1200);
+    }, 900);
 
     const progressInterval = window.setInterval(() => {
       setProgress((currentProgress) => {
@@ -36,13 +47,13 @@ export default function SimulationPage() {
           return 100;
         }
 
-        return Math.min(currentProgress + 2, 100);
+        return Math.min(currentProgress + 3, 100);
       });
-    }, 110);
+    }, 70);
 
     const redirectTimer = window.setTimeout(() => {
       router.push("/dashboard");
-    }, 6500);
+    }, 3500);
 
     return () => {
       window.clearInterval(stepInterval);
@@ -53,12 +64,10 @@ export default function SimulationPage() {
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
-      {/* Background glows */}
       <div className="pointer-events-none absolute left-[15%] top-[20%] h-80 w-80 rounded-full bg-primary/20 blur-[130px]" />
 
       <div className="pointer-events-none absolute bottom-[15%] right-[15%] h-80 w-80 rounded-full bg-secondary/15 blur-[130px]" />
 
-      {/* Background grid */}
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.12]"
         style={{
@@ -70,7 +79,6 @@ export default function SimulationPage() {
 
       <section className="relative z-10 w-full max-w-3xl">
         <div className="glass-panel rounded-[36px] px-6 py-10 text-center sm:px-12 sm:py-14">
-          {/* Animated logo */}
           <div className="relative mx-auto flex h-28 w-28 items-center justify-center">
             <div className="absolute inset-0 animate-ping rounded-full bg-primary/15" />
 
@@ -94,7 +102,6 @@ export default function SimulationPage() {
             paths.
           </p>
 
-          {/* Progress bar */}
           <div className="mt-10">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted">Simulation progress</span>
@@ -112,7 +119,6 @@ export default function SimulationPage() {
             </div>
           </div>
 
-          {/* Simulation steps */}
           <div className="mx-auto mt-10 max-w-xl space-y-3 text-left">
             {simulationSteps.map((step, index) => {
               const isComplete = index < activeStep;
@@ -132,8 +138,8 @@ export default function SimulationPage() {
                       isComplete
                         ? "bg-success/15 text-success"
                         : isActive
-                          ? "bg-secondary/15 text-secondary"
-                          : "bg-white/[0.05] text-muted"
+                        ? "bg-secondary/15 text-secondary"
+                        : "bg-white/[0.05] text-muted"
                     }`}
                   >
                     {isComplete ? (
@@ -141,13 +147,17 @@ export default function SimulationPage() {
                     ) : isActive ? (
                       <LoaderCircle size={18} className="animate-spin" />
                     ) : (
-                      <span className="text-xs font-semibold">{index + 1}</span>
+                      <span className="text-xs font-semibold">
+                        {index + 1}
+                      </span>
                     )}
                   </div>
 
                   <p
                     className={`text-sm sm:text-base ${
-                      isActive || isComplete ? "text-white" : "text-muted"
+                      isActive || isComplete
+                        ? "text-white"
+                        : "text-muted"
                     }`}
                   >
                     {step}

@@ -1,16 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowLeft,
   Bot,
+  LoaderCircle,
   MessageCircleMore,
   Send,
   Sparkles,
   UserRound,
 } from "lucide-react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 type Message = {
   id: number;
@@ -18,7 +25,44 @@ type Message = {
   text: string;
 };
 
-const futureProfiles = {
+type Future = {
+  id: string;
+  title: string;
+  subtitle: string;
+  score: number;
+  summary: string;
+  tags: string[];
+};
+
+type Simulation = {
+  decisionDNA?: Record<string, number>;
+  lifeScores?: Record<string, number>;
+  recommendation?: string;
+  timeline?: string[];
+  futures?: Future[];
+};
+
+type StoredSimulation = {
+  success?: boolean;
+  simulation?: Simulation;
+};
+
+type UserProfile = {
+  name?: string;
+  age?: string | number;
+  currentRole?: string;
+  mainGoal?: string;
+  decision?: string;
+  optionOne?: string;
+  optionTwo?: string;
+  optionThree?: string;
+  riskTolerance?: number;
+  financialPriority?: number;
+  workLifePriority?: number;
+  learningPriority?: number;
+};
+
+const fallbackProfiles = {
   stable: {
     title: "Stable Career Future",
     subtitle: "You in 2035",
@@ -30,18 +74,6 @@ const futureProfiles = {
       "What should I start doing today?",
       "Did this decision make you happy?",
     ],
-    responses: {
-      regret:
-        "My biggest regret was waiting too long before applying for better opportunities. I kept thinking I needed one more course or one more project.",
-      hard:
-        "The hardest part was staying patient. Growth was steady, but it sometimes felt slow compared to people taking bigger risks.",
-      today:
-        "Start building strong fundamentals, publish visible projects and apply before you feel fully ready.",
-      happy:
-        "Yes, mostly. Stability reduced stress and gave me freedom, but I still had to create challenges for myself to keep growing.",
-      fallback:
-        "This future worked because consistency mattered more than one perfect decision. Keep learning, apply early and do not let fear disguise itself as preparation.",
-    },
   },
   growth: {
     title: "High-Growth Future",
@@ -54,18 +86,6 @@ const futureProfiles = {
       "What should I avoid?",
       "How did you reach this role?",
     ],
-    responses: {
-      regret:
-        "I regret treating exhaustion like proof of ambition. The path was worth it, but I should have built healthier boundaries much earlier.",
-      hard:
-        "The hardest part was uncertainty. Some months felt exciting and others felt like everything could collapse.",
-      today:
-        "Build one excellent project, improve your communication and put yourself in environments where your learning speed increases.",
-      happy:
-        "Yes, but only after I stopped linking my entire identity to work. Growth felt meaningful once I created balance.",
-      fallback:
-        "The ambitious path rewarded speed, courage and adaptability. Take bold steps, but do not confuse burnout with progress.",
-    },
   },
   studies: {
     title: "Higher Studies Future",
@@ -78,128 +98,253 @@ const futureProfiles = {
       "Would you choose it again?",
       "What should I prepare before applying?",
     ],
-    responses: {
-      regret:
-        "I sometimes regretted how late financial stability arrived, especially when friends were already earning and progressing.",
-      hard:
-        "The hardest part was staying motivated during long research cycles when progress was difficult to measure.",
-      today:
-        "Strengthen mathematics, build research-oriented projects and verify that you genuinely enjoy deep study before committing.",
-      happy:
-        "Yes. The path matched my curiosity and gave me meaningful work, although it required patience.",
-      fallback:
-        "Higher studies worked because I enjoyed the learning itself, not only the final degree. Choose it for depth, not as an escape from uncertainty.",
-    },
   },
 };
 
 export default function FutureChatPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const futureId = params.id ?? "stable";
 
-  const profile =
-    futureProfiles[futureId as keyof typeof futureProfiles] ??
-    futureProfiles.stable;
-
+  const [future, setFuture] = useState<Future | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile>({});
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      role: "future",
-      text: `Hi. I’m the version of you who chose the ${profile.title.toLowerCase()}. ${profile.intro}`,
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoadingPage, setIsLoadingPage] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const [chatError, setChatError] = useState("");
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  const fallbackProfile =
+    fallbackProfiles[futureId as keyof typeof fallbackProfiles] ??
+    fallbackProfiles.stable;
+
+  const starterQuestions = useMemo(() => {
+    if (futureId === "stable") {
+      return fallbackProfiles.stable.starterQuestions;
+    }
+
+    if (futureId === "studies") {
+      return fallbackProfiles.studies.starterQuestions;
+    }
+
+    return fallbackProfiles.growth.starterQuestions;
+  }, [futureId]);
+
+  useEffect(() => {
+    try {
+      const storedSimulation =
+        localStorage.getItem("lifeos-dashboard") ||
+        localStorage.getItem("lifeos-simulation");
+
+      if (!storedSimulation) {
+        setPageError("No simulation data was found.");
+        setIsLoadingPage(false);
+        return;
+      }
+
+      const parsed = JSON.parse(storedSimulation) as
+        | StoredSimulation
+        | Simulation;
+
+      const simulation =
+        "simulation" in parsed && parsed.simulation
+          ? parsed.simulation
+          : (parsed as Simulation);
+
+      const selectedFuture = simulation.futures?.find(
+        (item) => item.id === futureId,
+      );
+
+      if (!selectedFuture) {
+        setPageError("The selected future could not be found.");
+        setIsLoadingPage(false);
+        return;
+      }
+
+      const storedProfile = localStorage.getItem("lifeos-onboarding");
+
+      if (storedProfile) {
+        setUserProfile(JSON.parse(storedProfile) as UserProfile);
+      }
+
+      setFuture(selectedFuture);
+
+      setMessages([
+        {
+          id: 1,
+          role: "future",
+          text: `Hi. I’m the version of you who chose the ${selectedFuture.title.toLowerCase()}. ${selectedFuture.summary}`,
+        },
+      ]);
+    } catch (error) {
+      console.error("Failed to load future chat data:", error);
+
+      setPageError(
+        error instanceof Error
+          ? error.message
+          : "Failed to load this future.",
+      );
+    } finally {
+      setIsLoadingPage(false);
+    }
+  }, [futureId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
+  }, [messages, isSending]);
 
   const nextId = useMemo(() => messages.length + 1, [messages.length]);
 
-  function generateReply(question: string) {
-    const normalized = question.toLowerCase();
+  async function sendQuestion(question: string) {
+    const trimmedQuestion = question.trim();
 
-    if (normalized.includes("regret")) {
-      return profile.responses.regret;
-    }
-
-    if (
-      normalized.includes("hard") ||
-      normalized.includes("difficult") ||
-      normalized.includes("stress")
-    ) {
-      return profile.responses.hard;
-    }
-
-    if (
-      normalized.includes("today") ||
-      normalized.includes("start") ||
-      normalized.includes("prepare") ||
-      normalized.includes("avoid")
-    ) {
-      return profile.responses.today;
-    }
-
-    if (
-      normalized.includes("happy") ||
-      normalized.includes("worth") ||
-      normalized.includes("choose again")
-    ) {
-      return profile.responses.happy;
-    }
-
-    return profile.responses.fallback;
-  }
-
-  function submitMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const trimmedInput = input.trim();
-
-    if (!trimmedInput) {
+    if (!trimmedQuestion || !future || isSending) {
       return;
     }
 
     const userMessage: Message = {
       id: nextId,
       role: "user",
-      text: trimmedInput,
+      text: trimmedQuestion,
     };
 
-    const futureMessage: Message = {
-      id: nextId + 1,
-      role: "future",
-      text: generateReply(trimmedInput),
-    };
+    const previousMessages = messages;
 
     setMessages((currentMessages) => [
       ...currentMessages,
       userMessage,
-      futureMessage,
     ]);
 
     setInput("");
+    setChatError("");
+    setIsSending(true);
+
+    try {
+      const response = await fetch(
+        "http://localhost:5000/api/ai/chat",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: trimmedQuestion,
+            future,
+            userProfile: {
+              name: userProfile.name,
+              age: userProfile.age,
+              currentRole: userProfile.currentRole,
+              goal: userProfile.mainGoal,
+              decision: userProfile.decision,
+              priorities: {
+                riskTolerance: userProfile.riskTolerance,
+                financialPriority:
+                  userProfile.financialPriority,
+                workLifePriority:
+                  userProfile.workLifePriority,
+                learningPriority:
+                  userProfile.learningPriority,
+              },
+            },
+            conversation: previousMessages,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success || !data.reply) {
+        throw new Error(
+          data.message || "Future You could not reply.",
+        );
+      }
+
+      const futureMessage: Message = {
+        id: nextId + 1,
+        role: "future",
+        text: data.reply,
+      };
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        futureMessage,
+      ]);
+    } catch (error) {
+      console.error("Future chat request failed:", error);
+
+      setChatError(
+        error instanceof Error
+          ? error.message
+          : "Unable to reach Future You.",
+      );
+    } finally {
+      setIsSending(false);
+    }
   }
 
-  function askStarterQuestion(question: string) {
-    const userMessage: Message = {
-      id: nextId,
-      role: "user",
-      text: question,
-    };
+  async function submitMessage(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    await sendQuestion(input);
+  }
 
-    const futureMessage: Message = {
-      id: nextId + 1,
-      role: "future",
-      text: generateReply(question),
-    };
+  if (isLoadingPage) {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-4">
+        <section className="glass-panel max-w-xl rounded-[32px] p-10 text-center">
+          <LoaderCircle
+            size={40}
+            className="mx-auto animate-spin text-secondary"
+          />
 
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      userMessage,
-      futureMessage,
-    ]);
+          <h1 className="text-gradient mt-6 text-4xl font-semibold">
+            Connecting to Future You
+          </h1>
+
+          <p className="mt-4 text-muted">
+            Loading the selected AI-generated future.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!future || pageError) {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-4">
+        <section className="glass-panel max-w-xl rounded-[32px] p-10 text-center">
+          <Bot size={40} className="mx-auto text-secondary" />
+
+          <h1 className="text-gradient mt-6 text-4xl font-semibold">
+            Future unavailable
+          </h1>
+
+          <p className="mt-4 text-muted">
+            {pageError || "Please generate a simulation first."}
+          </p>
+
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard")}
+            className="mt-7 rounded-2xl bg-gradient-to-r from-primary to-secondary px-6 py-3 text-sm font-semibold text-white"
+          >
+            Back to dashboard
+          </button>
+        </section>
+      </main>
+    );
   }
 
   return (
     <main className="relative min-h-screen overflow-hidden px-4 py-6 sm:px-6">
       <div className="pointer-events-none absolute left-[10%] top-[12%] h-80 w-80 rounded-full bg-primary/15 blur-[130px]" />
+
       <div className="pointer-events-none absolute bottom-[8%] right-[10%] h-80 w-80 rounded-full bg-secondary/10 blur-[130px]" />
 
       <div className="page-container relative z-10">
@@ -226,7 +371,7 @@ export default function FutureChatPage() {
         <section className="mx-auto max-w-5xl py-10">
           <div className="mb-8 text-center">
             <p className="text-sm font-semibold uppercase tracking-[0.28em] text-secondary">
-              Future Self Conversation
+              AI Future Self Conversation
             </p>
 
             <h1 className="text-gradient mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">
@@ -234,8 +379,8 @@ export default function FutureChatPage() {
             </h1>
 
             <p className="mx-auto mt-4 max-w-2xl text-lg leading-8 text-muted">
-              Ask about regrets, difficult moments, happiness and what you
-              should begin doing today.
+              Ask about regrets, difficult moments, happiness and
+              what you should begin doing today.
             </p>
           </div>
 
@@ -245,15 +390,28 @@ export default function FutureChatPage() {
                 <UserRound size={30} className="text-white" />
               </div>
 
-              <p className="mt-6 text-sm text-secondary">{profile.subtitle}</p>
+              <p className="mt-6 text-sm text-secondary">
+                {fallbackProfile.subtitle}
+              </p>
 
               <h2 className="mt-1 text-2xl font-semibold text-white">
-                {profile.title}
+                {future.title}
               </h2>
 
               <p className="mt-4 text-sm leading-7 text-muted">
-                This version of you answers from the selected future scenario.
+                {future.summary}
               </p>
+
+              <div className="mt-5 flex flex-wrap gap-2">
+                {(future.tags || []).map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
 
               <div className="mt-7">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
@@ -261,12 +419,13 @@ export default function FutureChatPage() {
                 </p>
 
                 <div className="mt-4 space-y-3">
-                  {profile.starterQuestions.map((question) => (
+                  {starterQuestions.map((question) => (
                     <button
                       key={question}
                       type="button"
-                      onClick={() => askStarterQuestion(question)}
-                      className="w-full rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm leading-6 text-slate-300 transition hover:border-secondary/30 hover:bg-secondary/[0.06] hover:text-white"
+                      disabled={isSending}
+                      onClick={() => sendQuestion(question)}
+                      className="w-full rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm leading-6 text-slate-300 transition hover:border-secondary/30 hover:bg-secondary/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {question}
                     </button>
@@ -282,9 +441,12 @@ export default function FutureChatPage() {
                 </div>
 
                 <div>
-                  <h2 className="font-semibold text-white">Future You</h2>
+                  <h2 className="font-semibold text-white">
+                    Future You
+                  </h2>
+
                   <p className="text-xs text-success">
-                    Connected to 2035 simulation
+                    Connected through LifeOS AI
                   </p>
                 </div>
               </div>
@@ -324,6 +486,28 @@ export default function FutureChatPage() {
                     </div>
                   </div>
                 ))}
+
+                {isSending && (
+                  <div className="flex justify-start">
+                    <div className="rounded-3xl rounded-bl-md border border-white/10 bg-white/[0.04] px-5 py-4">
+                      <div className="flex items-center gap-3 text-sm text-slate-300">
+                        <LoaderCircle
+                          size={17}
+                          className="animate-spin text-secondary"
+                        />
+                        Future You is reflecting...
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {chatError && (
+                  <div className="rounded-2xl border border-danger/20 bg-danger/[0.06] px-4 py-3 text-sm text-danger">
+                    {chatError}
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
               </div>
 
               <form
@@ -333,23 +517,47 @@ export default function FutureChatPage() {
                 <div className="flex items-end gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-2 focus-within:border-secondary/40">
                   <textarea
                     value={input}
-                    onChange={(event) => setInput(event.target.value)}
+                    disabled={isSending}
+                    onChange={(event) =>
+                      setInput(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
+
+                        if (input.trim()) {
+                          void sendQuestion(input);
+                        }
+                      }
+                    }}
                     placeholder="Ask your future self something..."
                     rows={2}
-                    className="max-h-36 min-h-12 flex-1 resize-none bg-transparent px-3 py-2 text-sm text-white outline-none placeholder:text-slate-600"
+                    className="max-h-36 min-h-12 flex-1 resize-none bg-transparent px-3 py-2 text-sm text-white outline-none placeholder:text-slate-600 disabled:opacity-60"
                   />
 
                   <button
                     type="submit"
+                    disabled={isSending || !input.trim()}
                     aria-label="Send message"
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-white transition hover:scale-105"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-white transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Send size={18} />
+                    {isSending ? (
+                      <LoaderCircle
+                        size={18}
+                        className="animate-spin"
+                      />
+                    ) : (
+                      <Send size={18} />
+                    )}
                   </button>
                 </div>
 
                 <p className="mt-3 text-center text-xs text-muted">
-                  Future responses are simulated decision-support scenarios.
+                  Responses are AI-generated decision-support
+                  scenarios, not guaranteed predictions.
                 </p>
               </form>
             </section>
