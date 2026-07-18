@@ -79,7 +79,7 @@ type UserProfile = {
   decision?: string;
 };
 
-const API_BASE_URL = "http://localhost:5000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL!;
 
 const scoreLabels = [
   { key: "career" as const, label: "Career growth", positive: true },
