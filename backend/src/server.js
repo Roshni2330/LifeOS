@@ -90,12 +90,14 @@ app.use((err, req, res, next) => {
 // Server
 // ---------------------------
 
-app.listen(PORT, () => {
-  console.log("====================================");
-  console.log("🚀 LifeOS Backend Started");
-  console.log(`🌐 URL: http://localhost:${PORT}`);
-  console.log(`❤️ Health: http://localhost:${PORT}/api/health`);
-  console.log(`🤖 AI Test: http://localhost:${PORT}/api/ai/test`);
-  console.log(`🧠 Simulation API: http://localhost:${PORT}/api/simulation/generate`);
-  console.log("====================================");
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log("====================================");
+    console.log("LifeOS Backend Started");
+    console.log(`URL: http://localhost:${PORT}`);
+    console.log(`Health: http://localhost:${PORT}/api/health`);
+    console.log("====================================");
+  });
+}
+
+module.exports = app;
