@@ -475,28 +475,6 @@ compare.png
 
 ---
 
-## 🎞️ Demo GIF
-
-Create a short GIF showing:
-
-```text
-Onboarding → Simulation → Dashboard → Future Chat
-```
-
-Save it as:
-
-```text
-frontend/public/screenshots/lifeos-demo.gif
-```
-
-Then this section will display it:
-
-<p align="center">
-  <img src="./frontend/public/screenshots/lifeos-demo.gif" width="900" alt="LifeOS Demo" />
-</p>
-
----
-
 ## 💡 Innovation
 
 LifeOS combines multiple AI experiences into one decision-support system:
